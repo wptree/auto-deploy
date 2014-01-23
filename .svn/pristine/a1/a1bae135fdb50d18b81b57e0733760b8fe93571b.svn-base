@@ -1,0 +1,22 @@
+upstream @appname@ {
+	session_sticky;
+}
+
+server {
+    listen 80;
+    server_name 122.226.100.40;
+
+    access_log  logs/@appname@_access.log  main;
+
+    include static.conf
+
+	location / {
+			rewrite ^(/.*)$ /@appname@ permanent;
+	}
+
+    location ^~ /@appname@/ {
+        proxy_pass http://@appname@;
+        proxy_send_timeout 90;
+        proxy_read_timeout 90;
+    }
+}

@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project default="build" basedir="." xmlns:artifact="antlib:org.apache.maven.artifact.ant">
+	
+    <property environment="env" />
+	<property file="${basedir}/build.properties"/>
+	
+	<condition property="isWindows">
+	    <os family="windows" />
+	</condition>
+
+	<taskdef resource="net/sf/antcontrib/antlib.xml">
+		<classpath>
+			<pathelement location="${ant.thirdparty.lib}/ant-contrib-1.0b3.jar"/>
+		</classpath>
+	</taskdef>
+	
+	<!-- declare the svn task-->
+	<typedef resource="org/tigris/subversion/svnant/svnantlib.xml">
+		<classpath>
+			<pathelement location="${ant.thirdparty.lib}/svnjavahl.jar" />
+			<pathelement location="${ant.thirdparty.lib}/svnant.jar" />
+			<pathelement location="${ant.thirdparty.lib}/svnClientAdapter.jar" />
+		</classpath>
+	</typedef>
+		
+	<!-- declare the maven task-->
+	<typedef resource="org/apache/maven/artifact/ant/antlib.xml" uri="antlib:org.apache.maven.artifact.ant">
+		<classpath>
+			<pathelement location="${ant.thirdparty.lib}/maven-ant-tasks-2.1.3.jar" />
+		</classpath>
+	</typedef>
+	
+	<!-- define macro for compressing js/css files -->
+	<macrodef name="compress">
+		<attribute name="jar"/>
+		<attribute name="file"/>
+		<attribute name="output"/>
+		<attribute name="charset" default="utf-8"/>
+		<sequential>
+			<echo>Compressing @{file} to @{output}</echo>
+			<java fork="true" jar="@{jar}" >
+				<arg value="@{file}"/>
+				<arg value="-o"/>
+				<arg value="@{output}"/>
+				<arg value="--charset"/>
+				<arg value="@{charset}"/>
+			</java>
+		</sequential>
+	</macrodef>
+	
+	<!-- define macro for replace tokens in configration files with property files -->
+	<macrodef name="replace-file-token">
+		<attribute name="file" />
+		<attribute name="propertyfile" default=""/>
+		<attribute name="tofile" default="@{file}" />
+		<sequential>
+			<if>
+				<available file="@{file}" />
+				<then>
+					<if>
+						<and>
+							<not>
+								<equals arg1="@{propertyfile}" arg2=""/>
+							</not>
+							<available file="@{propertyfile}" />
+						</and>
+						<then>
+							<echo level="verbose">Replacing token in @{file} using @{propertyfile}</echo>
+							<loadfile property="@{file}.token-replaced" srcFile="@{file}">
+								<filterchain>
+									<filterreader classname="org.apache.tools.ant.filters.ReplaceTokens">
+										<param type="propertiesfile" value="@{propertyfile}" />
+									</filterreader>
+								</filterchain>
+							</loadfile>
+							<if>
+							    <equals arg1="${isWindows}" arg2="true" />
+								<then>
+								    <sleep seconds="1"/>		
+								</then>
+							</if>
+							<if>
+								<isset property="@{file}.token-replaced" />
+								<then>
+									<echo message="${@{file}.token-replaced}" file="@{tofile}" />
+									<var name="@{file}.token-replaced" unset="true" />
+									<delete file="@{file}" verbose="false"/>
+									<move file="@{tofile}" tofile="@{file}" verbose="false"/>
+								</then>
+							</if>
+						</then>
+						<else>
+							<copy tofile="@{tofile}" file="@{file}" />
+						</else>
+
+					</if>
+					<echo level="verbose">Dump token-replaced file to @{tofile}</echo>
+				</then>
+				<else>
+					<echo message="Warning: Skip replacing @{file} due to file unavailable." level="verbose"/>
+				</else>
+			</if>
+		</sequential>
+	</macrodef>
+
+	<path id="project.class.path">
+		<fileset dir="${tomcat.home}/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${webinf.dir}/lib">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+	
+	<!-- prepare for the checking out:clean the directory  -->
+	<target name="-init" description="Prepare the dirs for the task">
+		<delete dir="${basedir}/${app.name}.war" />
+		<delete dir="${build.dir}" />
+		<mkdir dir="${build.dir}" />
+		<mkdir dir="${classes.dir}"/>
+	</target>
+
+	<svnSetting svnkit="false" javahl="false" username="${svn.user}" password="${svn.user.pwd}" id="svn.settings"/>
+
+	<!-- check|update the scource from the svn -->
+	<target name="-prepare-sourcecode" depends="-init">
+		<if>
+			<available file="${svn.checkout.dest}" type="dir"/>
+			<then>
+				<echo>${svn.checkout.dest} already exists, will perform svn update...</echo>
+				<svn refid="svn.settings">
+					<update dir="${svn.checkout.dest}" revision="${svn.tag}"/>
+				</svn>
+			</then>
+			<else>
+				<echo>${svn.checkout.dest} dose not exist, will perform svn checkout...</echo>
+				<svn refid="svn.settings" >
+					<checkout url="${svn.repository}" destPath="${svn.checkout.dest}" revision="${svn.tag}"/>
+				</svn>
+			</else>
+		</if>
+	</target>
+
+	<target name="-prepare-build">
+		<copy todir="${build.dir}" >
+			<fileset dir="${svn.checkout.dest}/src/main">
+				<include name="java/**/*.*" />
+				<include name="resources/**/*.*"/>
+				<exclude name="**/*.svn" />
+			</fileset>
+		</copy>
+	
+		<for param="config.file">
+			<path>
+				<fileset dir="${build.dir}/resources" includes="**/*.*"/>
+			</path>
+			<sequential>
+				<!-- ${target} is comming from " ant -f build.xml -Dtarget=dev/qa/prod "-->
+				<replace-file-token file="@{config.file}" propertyfile="${target}.properties" tofile="@{config.file}.relaced"/>
+			</sequential>
+		</for>
+		
+		<!-- clean history maven dependency libraries -->
+		<for param="jar">
+			<path>
+				<fileset dir="${webinf.dir}/lib" casesensitive="false" includes="*.jar"/>
+			</path>
+			<sequential>
+				<delete file="@{jar}"/>
+			</sequential>
+		</for>
+	</target>
+	
+	<target name="-maven-clean">
+		<delete dir="${svn.checkout.dest}/target" />
+	</target>
+		
+	<target name="-maven-compile" depends="-maven-clean,-prepare-sourcecode,-prepare-build">
+		<artifact:pom id="sdb.pom" file="${svn.checkout.dest}/pom.xml"/>
+		<artifact:dependencies pathId="maven.classpath" filesetId="maven.deps.fileset" usescope="runtime">
+			<pom refid="sdb.pom" />
+		</artifact:dependencies>
+        <copy todir="${webinf.dir}/lib">
+            <fileset refid="maven.deps.fileset"/>
+            <mapper type="flatten"/>
+        </copy>
+		<copy todir="${classes.dir}">  
+		   <fileset dir="${build.dir}/java" excludes="**/*.java"/>  
+		</copy>  
+		
+		<javac encoding="utf-8" includejavaruntime="true" srcdir="${build.dir}/java" destdir="${classes.dir}" includeantruntime="true">
+			<classpath refid="project.class.path" />
+		</javac>
+		<copy todir="${classes.dir}">
+			<fileset dir="${build.dir}/resources">
+				<include name="**/*.properties" />
+				<include name="**/*.xml" />
+				<include name="**/*.txt" />
+				<include name="**/*.vm" />
+				<include name="**/*.drl" />
+			</fileset>
+		</copy>
+	</target>
+	
+	<target name="-minify-js">
+		<if>
+			<equals arg1="${update.js}" arg2="false" />
+			<then>
+				<echo>**********************JS not changed************************</echo>
+			</then>
+			<else>
+				<delete dir="${static.root}/js" />
+				<mkdir dir="${static.root}/js" />
+				<echo>********************************************************************</echo>
+				<echo>**********************Compressing JavaScript************************</echo>
+				<echo>********************************************************************</echo>
+				<for param="file">
+					<path>
+						<fileset dir="${web.dir}/js" includes="**/*.js" />
+					</path>
+					<sequential>
+						<var name="jsname" unset="true" />
+						<basename file="@{file}" property="jsname" />
+						<compress jar="${ant.thirdparty.lib}/yuicompressor-2.4.7.jar" file="@{file}" output="${static.root}/js/${jsname}" />
+					</sequential>
+				</for>
+				<copy todir="${static.root}/js">
+					<fileset dir="${web.dir}/js">
+						<include name="**/*.swf"/>
+					</fileset>
+				</copy>
+			</else>
+		</if>
+
+	</target>
+
+	<target name="-minify-css">
+		<if>
+			<equals arg1="${update.css}" arg2="false" />
+			<then>
+				<echo>**********************CSS not changed************************</echo>
+			</then>
+			<else>
+				<delete dir="${static.root}/css" />
+				<mkdir dir="${static.root}/css" />
+				<echo>********************************************************************</echo>
+				<echo>**********************Compressing JavaScript************************</echo>
+				<echo>********************************************************************</echo>
+				<for param="cssfile">
+					<path>
+						<fileset dir="${web.dir}/css" includes="**/*.css" />
+					</path>
+					<sequential>
+						<var name="cssname" unset="true" />
+						<basename file="@{cssfile}" property="cssname" />
+						<compress jar="${ant.thirdparty.lib}/yuicompressor-2.4.7.jar" file="@{cssfile}" output="${static.root}/css/${cssname}" />
+					</sequential>
+				</for>
+			</else>
+		</if>
+	</target>
+	
+	<target name="-synchronize-static-files" depends="-minify-js,-minify-css" >
+		<!-- take care of non-css files -->
+		<copy todir="${static.root}/css">
+			<fileset dir="${web.dir}/css">
+				<exclude name="css/**/*.css"/>
+				<exclude name="**/.svn/**" />
+			</fileset>
+		</copy>
+		<!-- take care of non-js files -->
+		<copy todir="${static.root}/js">
+			<fileset dir="${web.dir}/js">
+				<exclude name="js/**/*.js"/>
+				<exclude name="**/.svn/**" />
+			</fileset>
+		</copy>
+		
+		<if>
+			<equals arg1="${target}" arg2="prod" casesensitive="false" />
+			<then>
+				<sshexec host="${agent.server.host}" username="${deploy.username}" password="${deploy.user.password}" command="rm -rf ${static.root}/js ${static.root}/css"/>
+			    <scp todir="${deploy.username}:${deploy.user.password}@${agent.server.host}:${static.root}/">
+			      <fileset dir="${static.root}"/>
+			    </scp>
+			</then>
+		</if>
+	</target>
+	
+
+	<target name="war" depends="-maven-compile,-synchronize-static-files">
+		<war encoding="utf-8" destfile="${build.dir}/${app.name}.war" webxml="${webinf.dir}/web.xml" manifest="${metainf.dir}/MANIFEST.MF">
+			<lib dir="${webinf.dir}/lib" />
+			<classes dir="${classes.dir}"/>
+			<fileset dir="${web.dir}">
+				<exclude name="js/**/*.*"/>
+				<exclude name="css/**/*.*"/>
+			</fileset>
+			<fileset dir="${static.root}">
+				<include name="js/**/*.*"/>
+				<include name="css/**/*.*"/>
+			</fileset>
+			<exclude name="**/.svn/**" />
+			<exclude name="**/web.xml" />
+		</war>
+	</target>
+	
+	<target name="build" depends="war" />
+
+</project>
