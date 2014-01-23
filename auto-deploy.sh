@@ -184,6 +184,8 @@ foreach new_app ($not_exist_clusters)
     sed "s/@http.port@/$http_port/g; s/@appname@/$new_app/g" $service_template > $current/service.tmp
     sudo mv -f $current/service.tmp /etc/init.d/$new_app
     sudo chmod a+x /etc/init.d/$new_app
+    sudo chkconfig --add $new_app
+	sudo chkconfig --level 2345 $new_app on
     
     awk -F= '{if($1 ~ /port/) print $1,$2+1 > "deploy.properties";else print $1,$2 > "deploy.properties"}' OFS="=" $current/deploy.properties
 
@@ -335,6 +337,6 @@ if($clusters[1] == "all" || $clusters[1] == "ALL") then
     endif
 endif
 
-echo "Auto deploy $appname finished"
+echo "******* Auto deploy $appname finished **************"
 
 exit $?
