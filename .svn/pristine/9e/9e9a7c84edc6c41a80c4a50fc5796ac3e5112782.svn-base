@@ -1,0 +1,19 @@
+#!/bin/bash  
+# description: Tomcat Start Stop Restart  
+# processname: tomcat  
+
+CATALINA_HOME=/usr/local/@appname@
+
+case $1 in  
+start)
+sh $CATALINA_HOME/bin/startup.sh  
+;;   
+stop)
+sh $CATALINA_HOME/bin/myshutdown.sh $2 
+;;   
+restart)  
+sh $CATALINA_HOME/bin/myshutdown.sh  
+sh $CATALINA_HOME/bin/startup.sh  
+;;   
+esac      
+exit $?

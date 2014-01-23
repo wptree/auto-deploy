@@ -1,0 +1,19 @@
+#!/bin/csh
+
+set current = `pwd`
+
+echo "Please input the appname you want to reload static files:"
+set appname=$<
+
+#copy the static files
+set static_root = /var/www/$appname
+set web_dir = $current/$appname/src/main/webapp
+sudo rm -rf $static_root/*
+sudo cp -rf $web_dir/js $static_root/js
+sudo cp -rf $web_dir/css $static_root/css
+
+#open the static agent
+sudo sed -i "/include static.conf/c 	include static.conf" /usr/local/nginx/conf/vhost/$appname.conf
+sudo service nginx reload
+
+exit $?
