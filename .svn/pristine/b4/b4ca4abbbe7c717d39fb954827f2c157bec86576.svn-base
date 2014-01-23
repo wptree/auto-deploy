@@ -1,5 +1,0 @@
-location ~ .*\.(gif|jpg|jpeg|bmp|png|ico|txt|js|css)$ { 
-	root /var/www; 
-	expires      7d; 
-} 
-
