@@ -87,14 +87,14 @@ while(1 == 1)
                 endif
             end
             @ count = 0 
-            foreach var (${dir_all})
+           foreach var ($dir_all)
                 if($model == $var) then
                     set exist_clusters = ($exist_clusters $model)
                     @ count --
                 endif
                 @ count ++
             end
-            if($#string == $count) then
+            if($#dir_all == $count) then
                 set not_exist_clusters = ($not_exist_clusters $model)
             endif
             skip:
