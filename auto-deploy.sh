@@ -34,7 +34,6 @@ else
     set svn_app_path = $target 
 endif
 
-#判断tagname是否存在，不存在则退出
 sed 's/^/set /g' $current/deploy.properties > $current/deploy.properties.tmp
 source $current/deploy.properties.tmp 1> /dev/null
 rm -f $current/deploy.properties.tmp
@@ -45,6 +44,7 @@ set build_svn = `grep svn.repository /tmp/temp-build.properties | awk -F= '{prin
 set build_path =  `echo $build_svn|awk -F"/" '{print $1, $2, $3, $4, $5, $6, $7}' OFS="/"`
 set is_path_exist = `svn ls $build_path --username $svn_username --password $svn_account | grep $svn_app_path`
 
+#exit if the tag name does not exist
 if($#is_path_exist == 0) then
     echo "the tag dose not exist."
     exit 1
@@ -87,7 +87,7 @@ while(1 == 1)
                 endif
             end
             @ count = 0 
-           foreach var ($dir_all)
+            foreach var ($dir_all)
                 if($model == $var) then
                     set exist_clusters = ($exist_clusters $model)
                     @ count --
@@ -125,8 +125,8 @@ if($#not_exist_clusters != 0) then
     else 
         set port_type = "http"
     endif
-	
-	sed "s/@appname@/$appname/g" $current/${port_type}.conf > $current/${appname}.conf.tmp 
+    
+    sed "s/@appname@/$appname/g" $current/${port_type}.conf > $current/${appname}.conf.tmp 
     if($is_local == "local") then
         set is_path_exist = `ls $nginx_path | grep ${appname}.conf`
         if($#is_path_exist == 0) then
@@ -180,12 +180,12 @@ foreach new_app ($not_exist_clusters)
 
     sudo mv -f $new_tomcat /usr/local/$new_app 
     sudo chown -R tomcat:tomcat /usr/local/$new_app 
+    sudo chkconfig --add $new_app
+    sudo chkconfig --level 2345 $new_app on
     
     sed "s/@http.port@/$http_port/g; s/@appname@/$new_app/g" $service_template > $current/service.tmp
     sudo mv -f $current/service.tmp /etc/init.d/$new_app
     sudo chmod a+x /etc/init.d/$new_app
-    sudo chkconfig --add $new_app
-	sudo chkconfig --level 2345 $new_app on
     
     awk -F= '{if($1 ~ /port/) print $1,$2+1 > "deploy.properties";else print $1,$2 > "deploy.properties"}' OFS="=" $current/deploy.properties
 
@@ -252,19 +252,45 @@ rm -f $current/build.properties
 
 #stop the static nginx agent
 if($is_local == "local") then
-    sudo sed -i "/include vhost\/static.conf/c #include vhost\/static.conf;" /usr/local/nginx/conf/vhost/$appname.conf
+    #sudo sed -i "/include vhost\/static.conf/c #include vhost\/static.conf;" /usr/local/nginx/conf/vhost/$appname.conf
+    @ startline = `sed -n '/#static conf start/=' /usr/local/nginx/conf/vhost/${appname}.conf | tr -d '\r\n'`
+    @ endline = `sed -n '/#static conf end/=' /usr/local/nginx/conf/vhost/${appname}.conf | tr -d '\r\n'`
+
+    if($startline == 0 || $endline == 0) then
+    	echo "/usr/local/nginx/conf/vhost/${appname}.conf is invalid; please add static start/end flag."
+    	exit 1
+    endif
+
+    @ startline ++
+    @ endline --
+
+    if($endline >= $startline) then
+    	sed -i "${startline},${endline}d" /usr/local/nginx/conf/vhost/${appname}.conf
+    endif
+    
     if($nginx_error == "false") then
         sudo service nginx reload
     endif
 else
-    ssh -tq $nginx_server_ip "sudo sed -i '/include vhost\/static.conf/c #include vhost\/static.conf;' /usr/local/nginx/conf/vhost/$appname.conf"
+    @ startline = `ssh -tq $nginx_server_ip "sed -n '/#static conf start/=' /usr/local/nginx/conf/vhost/${appname}.conf" | tr -d '\r\n'`
+    @ endline = `ssh -tq $nginx_server_ip "sed -n '/#static conf end/=' /usr/local/nginx/conf/vhost/${appname}.conf" | tr -d '\r\n'`
+
+    if($startline == 0 || $endline == 0) then
+    	echo "/usr/local/nginx/conf/vhost/${appname}.conf is invalid; please add static start/end flag."
+    	exit 1
+    endif
+
+    @ startline ++
+    @ endline --
+    if($endline >= $startline) then
+    	ssh -tq $nginx_server_ip "sudo sed -i '${startline},${endline}d' /usr/local/nginx/conf/vhost/${appname}.conf"
+    endif
     if($nginx_error == "false") then
         ssh -tq $nginx_server_ip "sudo service nginx reload"
     endif
 endif
 
 # start all the clusters
-
 foreach app ($exist_clusters)
     set CATALINA_HOME = /usr/local/$app
 
@@ -319,24 +345,34 @@ if($clusters[1] == "all" || $clusters[1] == "ALL") then
         sudo rm -rf $static_root/*
         sudo cp -rf $web_dir/js $static_root/js
         sudo cp -rf $web_dir/css $static_root/css
-        sudo sed -i '/include vhost\/static.conf/c include vhost\/static.conf;' /usr/local/nginx/conf/vhost/$appname.conf
-        if($nginx_error == "false") then
+        sed "s/@appname@/$appname/g" static.conf > /tmp/$appname/static.new
+        set static = `cat /tmp/${appname}/static.new`
+        sudo sed -i "/#static conf start/a $static" /usr/local/nginx/conf/vhost/$appname.conf
+
+        sudo service nginx test
+
+        if($nginx_error == "true") then
+            echo "local nginx test error, please check the conf files..."
+        else
             sudo service nginx reload
         endif
     else
         ssh -tq $nginx_server_ip "sudo rm -rf $static_root/*"
-        ssh -tq $nginx_server_ip "mkdir ~/static"
+        ssh -tq $nginx_server_ip "mkdir -p ~/static"
 
         rsync -a $web_dir/js ${nginx_server_ip}:~/static
         rsync -a $web_dir/css ${nginx_server_ip}:~/static
         ssh -tq $nginx_server_ip "sudo mkdir -p $static_root;sudo rm -rf $static_root/*;sudo mv -f ~/static/js $static_root/js;sudo mv -f ~/static/css $static_root/css; sudo rm -rf ~/static"
-        ssh -tq $nginx_server_ip "sudo sed -i '/include vhost\/static.conf/c include vhost\/static.conf;' /usr/local/nginx/conf/vhost/$appname.conf"
+        sed "s/@appname@/$appname/g" $current/static.conf > /tmp/$appname/static.new
+        set static = `cat /tmp/${appname}/static.new`
+        ssh -tq $nginx_server_ip "sudo sed -i '/#static conf start/a $static' /usr/local/nginx/conf/vhost/${appname}.conf"
+        rm -f /tmp/${appname}/static.new
         if($nginx_error == "false") then
             ssh -tq $nginx_server_ip "sudo service nginx reload"
         endif
     endif
 endif
 
-echo "******* Auto deploy $appname finished **************"
+echo "Auto deploy $appname finished"
 
 exit $?
