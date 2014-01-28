@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project default="build" basedir="." xmlns:artifact="antlib:org.apache.maven.artifact.ant">
-	
-    <property environment="env" />
+
+	<property environment="env" />
 	<property file="${basedir}/build.properties"/>
-	
+	<property name="YUICompressor" value="${ant.thirdparty.lib}/yuicompressor-2.4.7.jar"/>
+
 	<condition property="isWindows">
-	    <os family="windows" />
+		<os family="windows" />
 	</condition>
 
 	<taskdef resource="net/sf/antcontrib/antlib.xml">
@@ -13,7 +14,7 @@
 			<pathelement location="${ant.thirdparty.lib}/ant-contrib-1.0b3.jar"/>
 		</classpath>
 	</taskdef>
-	
+
 	<!-- declare the svn task-->
 	<typedef resource="org/tigris/subversion/svnant/svnantlib.xml">
 		<classpath>
@@ -22,32 +23,47 @@
 			<pathelement location="${ant.thirdparty.lib}/svnClientAdapter.jar" />
 		</classpath>
 	</typedef>
-		
+
 	<!-- declare the maven task-->
 	<typedef resource="org/apache/maven/artifact/ant/antlib.xml" uri="antlib:org.apache.maven.artifact.ant">
 		<classpath>
 			<pathelement location="${ant.thirdparty.lib}/maven-ant-tasks-2.1.3.jar" />
 		</classpath>
 	</typedef>
-	
+
 	<!-- define macro for compressing js/css files -->
-	<macrodef name="compress">
-		<attribute name="jar"/>
-		<attribute name="file"/>
-		<attribute name="output"/>
-		<attribute name="charset" default="utf-8"/>
+	<macrodef name="yuicompress">
+		<attribute name="src"/>
+		<attribute name="target"/>
+		<attribute name="sourceType"/>
 		<sequential>
-			<echo>Compressing @{file} to @{output}</echo>
-			<java fork="true" jar="@{jar}" >
-				<arg value="@{file}"/>
-				<arg value="-o"/>
-				<arg value="@{output}"/>
-				<arg value="--charset"/>
-				<arg value="@{charset}"/>
-			</java>
+			<echo message="Compressing files at @{src}" />
+			<!-- create target folder if it doesn't exist already -->
+			<mkdir dir="@{target}" />
+			<!-- Create directories recursively first.-->
+			<copy todir="@{target}">
+				<fileset dir="@{src}">
+					<include name="**.*"/>
+					<exclude name="**/*.@{sourceType}" />
+				</fileset>
+			</copy>
+			<!-- Compress files recursively -->
+			<apply executable="java" parallel="false" verbose="true" dest="@{target}">
+				<fileset dir="@{src}">
+					<include name="**/*.@{sourceType}" />
+				</fileset>
+				<arg line="-jar" />
+				<arg path="${YUICompressor}" />
+				<arg value="--charset" />
+				<arg value="UTF-8" />
+				<arg value="-o" />
+				<targetfile />
+				<mapper type="glob" from="*.@{sourceType}" to="*.@{sourceType}" />
+			</apply>
+			<echo message="Files compressed and copied to @{target}" />
 		</sequential>
 	</macrodef>
-	
+
 	<!-- define macro for replace tokens in configration files with property files -->
 	<macrodef name="replace-file-token">
 		<attribute name="file" />
@@ -74,9 +90,9 @@
 								</filterchain>
 							</loadfile>
 							<if>
-							    <equals arg1="${isWindows}" arg2="true" />
+								<equals arg1="${isWindows}" arg2="true" />
 								<then>
-								    <sleep seconds="1"/>		
+									<sleep seconds="1"/>
 								</then>
 							</if>
 							<if>
@@ -111,7 +127,7 @@
 			<include name="**/*.jar" />
 		</fileset>
 	</path>
-	
+
 	<!-- prepare for the checking out:clean the directory  -->
 	<target name="-init" description="Prepare the dirs for the task">
 		<delete dir="${basedir}/${app.name}.war" />
@@ -139,7 +155,7 @@
 				<exclude name="**/*.svn" />
 			</fileset>
 		</copy>
-	
+
 		<for param="config.file">
 			<path>
 				<fileset dir="${build.dir}/resources" includes="**/*.*"/>
@@ -149,7 +165,7 @@
 				<replace-file-token file="@{config.file}" propertyfile="${target}.properties" tofile="@{config.file}.relaced"/>
 			</sequential>
 		</for>
-		
+
 		<!-- clean history maven dependency libraries -->
 		<for param="jar">
 			<path>
@@ -160,24 +176,24 @@
 			</sequential>
 		</for>
 	</target>
-	
+
 	<target name="-maven-clean">
 		<delete dir="${svn.checkout.dest}/target" />
 	</target>
-		
+
 	<target name="-maven-compile" depends="-maven-clean,-prepare-sourcecode,-prepare-build">
 		<artifact:pom id="sdb.pom" file="${svn.checkout.dest}/pom.xml"/>
 		<artifact:dependencies pathId="maven.classpath" filesetId="maven.deps.fileset" usescope="runtime">
 			<pom refid="sdb.pom" />
 		</artifact:dependencies>
-        <copy todir="${webinf.dir}/lib">
-            <fileset refid="maven.deps.fileset"/>
-            <mapper type="flatten"/>
-        </copy>
-		<copy todir="${classes.dir}">  
-		   <fileset dir="${build.dir}/java" excludes="**/*.java"/>  
-		</copy>  
-		
+		<copy todir="${webinf.dir}/lib">
+			<fileset refid="maven.deps.fileset"/>
+			<mapper type="flatten"/>
+		</copy>
+		<copy todir="${classes.dir}">
+			<fileset dir="${build.dir}/java" excludes="**/*.java"/>
+		</copy>
+
 		<javac encoding="utf-8" includejavaruntime="true" srcdir="${build.dir}/java" destdir="${classes.dir}" includeantruntime="true">
 			<classpath refid="project.class.path" />
 		</javac>
@@ -191,14 +207,14 @@
 			</fileset>
 		</copy>
 		<tstamp>
-	        <format property="current.time" pattern="yyyy-MM-dd HH:mm:ss" />
-	    </tstamp>
+			<format property="current.time" pattern="yyyy-MM-dd HH:mm:ss" />
+		</tstamp>
 		<echo file="${web.dir}/README">
 			version: ${instance.version}
 			buildAt: ${current.time}
-		</echo> 
+		</echo>
 	</target>
-	
+
 	<target name="-minify-js">
 		<if>
 			<available file="${web.dir}/js" type="dir"/>
@@ -213,23 +229,7 @@
 				<echo>********************************************************************</echo>
 				<echo>**********************Compressing JavaScript************************</echo>
 				<echo>********************************************************************</echo>
-				<for param="file">
-					<path>
-						<fileset dir="${web.dir}/js" includes="**/*.js" />
-					</path>
-					<sequential>
-						<var name="jsname" unset="true" />
-						<basename file="@{file}" property="jsname" />
-						<compress jar="${ant.thirdparty.lib}/yuicompressor-2.4.7.jar" file="@{file}" output="/tmp/js/${jsname}" />
-					</sequential>
-				</for>
-				<copy todir="/tmp/js">
-					<fileset dir="${web.dir}/js">
-						<include name="**/*.swf"/>
-						<exclude name="js/**/*.js"/>
-						<exclude name="**/.svn/**" />
-					</fileset>
-				</copy>
+				<yuicompress sourcetype="js" src="${web.dir}/js" target="/tmp/js"/>
 			</then>
 			<else>
 				<echo>**********************JS not found************************</echo>
@@ -252,31 +252,14 @@
 				<echo>********************************************************************</echo>
 				<echo>**********************Compressing JavaScript************************</echo>
 				<echo>********************************************************************</echo>
-				<for param="cssfile">
-					<path>
-						<fileset dir="${web.dir}/css" includes="**/*.css" />
-					</path>
-					<sequential>
-						<var name="cssname" unset="true" />
-						<basename file="@{cssfile}" property="cssname" />
-						<dirname property="parent.dir" file="@{cssfile}"/>
-						<echo>${parent.dir}</echo>
-						<compress jar="${ant.thirdparty.lib}/yuicompressor-2.4.7.jar" file="@{cssfile}" output="/tmp/css/${cssname}" />
-					</sequential>
-				</for>
-				<copy todir="/tmp/css">
-					<fileset dir="${web.dir}/css">
-						<exclude name="css/**/*.css"/>
-						<exclude name="**/.svn/**" />
-					</fileset>
-				</copy>
+				<yuicompress sourcetype="css" src="${web.dir}/css" target="/tmp/css"/>
 			</then>
 			<else>
 				<echo>**********************CSS not found************************</echo>
 			</else>
 		</if>
 	</target>
-	
+
 	<target name="-copy-static-files">
 		<if>
 			<equals arg1="${skip.minify.static}" arg2="true"/>
@@ -284,14 +267,16 @@
 				<echo>**********************skip minify static files************************</echo>
 			</then>
 			<else>
-				<antcall target="-minify-js"></antcall>
-				<antcall target="-minify-css"></antcall>
+				<antcall target="-minify-js">
+				</antcall>
+				<antcall target="-minify-css">
+				</antcall>
 				<delete dir="${web.dir}/js" />
 				<mkdir dir="${web.dir}/js" />
 				<copy todir="${web.dir}/js">
 					<fileset dir="/tmp/js" />
 				</copy>
-				<delete dir="/tmp/js" />	
+				<delete dir="/tmp/js" />
 
 				<delete dir="${web.dir}/css" />
 				<mkdir dir="${web.dir}/css" />
@@ -301,9 +286,9 @@
 				<delete dir="/tmp/css" />
 			</else>
 		</if>
-			
+
 	</target>
-	
+
 
 	<target name="war" depends="-maven-compile,-copy-static-files">
 		<war encoding="utf-8" destfile="${build.dir}/${app.name}.war" webxml="${webinf.dir}/web.xml" manifest="${metainf.dir}/MANIFEST.MF">
@@ -316,7 +301,7 @@
 			<exclude name="**/web.xml" />
 		</war>
 	</target>
-	
+
 	<target name="build" depends="war" />
 
 </project>
