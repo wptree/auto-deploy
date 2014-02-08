@@ -273,14 +273,14 @@
 				</antcall>
 				<delete dir="${web.dir}/js" />
 				<mkdir dir="${web.dir}/js" />
-				<copy todir="${web.dir}/js">
+				<copy todir="${web.dir}/js" failonerror="false">
 					<fileset dir="/tmp/js" />
 				</copy>
 				<delete dir="/tmp/js" />
 
 				<delete dir="${web.dir}/css" />
 				<mkdir dir="${web.dir}/css" />
-				<copy todir="${web.dir}/css">
+				<copy todir="${web.dir}/css" failonerror="false">
 					<fileset dir="/tmp/css" />
 				</copy>
 				<delete dir="/tmp/css" />

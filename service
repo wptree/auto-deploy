@@ -10,7 +10,7 @@ start)
 STAT=`netstat -na |grep @http.port@| awk '{print $6}'`
 if [ "$STAT" = "LISTEN" ]; then
 	echo "@http.port@ PORT IS LISTENING, PLEASE STOP FIRST."
-elif [ "$STAT" = "" ]; then
+else
 	su -c $CATALINA_HOME/bin/startup.sh tomcat
 fi	
 ;;   
