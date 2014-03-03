@@ -265,7 +265,7 @@ if($is_local == "local") then
     @ endline --
 
     if($endline >= $startline) then
-    	sed -i "${startline},${endline}d" /usr/local/nginx/conf/vhost/${appname}.conf
+    	sudo sed -i "${startline},${endline}d" /usr/local/nginx/conf/vhost/${appname}.conf
     endif
     
     if($nginx_error == "false") then
